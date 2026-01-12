@@ -1,0 +1,22 @@
+package flows;
+
+import graphs.Graph;
+import graphs.IdentifyVertices;
+
+public class IsCritical {
+    public static boolean is_A_flow_critical(Graph g, int k){
+        if(new AFlowCheck(g,k).hasNonZeroFlow()){
+            return false;
+        }
+
+        for(int u = 0; u < g.getVertexCount()-1; u++){
+            for(int v = u+1; v < g.getVertexCount(); v++){
+                Graph g2 = IdentifyVertices.identifyVertices(g,u,v);
+                if (!(new AFlowCheck(g2,k).hasNonZeroFlow())){
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+}
