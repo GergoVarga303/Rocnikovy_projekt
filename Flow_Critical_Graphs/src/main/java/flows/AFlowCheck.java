@@ -45,6 +45,11 @@ public class AFlowCheck {
             balance[e.getFrom()] += val;
             balance[e.getTo()] -= val;
 
+            //tu mozeme priradit opacnu orientaciu hrany,
+            // cize e.getto -=, e.getfrom +=, backtrack, e.getto +=, e.getfrom-=
+            // tym padom pri grupe s mnozinou co obsahuje zaporne hodnoty nemusime skusat zaporne,
+            // lebo zmena orientacie funguje ako inverzny prvok
+
         }
         return false;
     }
