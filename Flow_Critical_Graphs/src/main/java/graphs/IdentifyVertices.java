@@ -12,7 +12,7 @@ public class IdentifyVertices{
         }
         map[v] = map[u];
 
-        for(Edge edge : g.getAllEdges()){
+        for(Edge edge : g.getEdges()){
             int a = map[edge.getFrom()];
             int b = map[edge.getTo()];
 
