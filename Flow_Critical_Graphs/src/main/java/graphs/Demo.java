@@ -8,8 +8,8 @@ public class Demo {
         g.addEdge(1,3);
         g.addEdge(0,1);
 
-        System.out.println(g.getEdges());
+        System.out.println(g.getAllEdges());
         Graph h = IdentifyVertices.identifyVertices(g,0,1);
-        System.out.println(h.getEdges());
+        System.out.println(h.getAllEdges());
     }
 }

@@ -13,7 +13,7 @@ public class AFlowCheck {
     public AFlowCheck(Graph g, int k) {
         this.g = g;
         this.k = k;
-        this.edgeCount = g.getEdges().size();
+        this.edgeCount = g.getAllEdges().size();
         balance = new int[g.getVertexCount()];
     }
 
@@ -30,7 +30,7 @@ public class AFlowCheck {
             return true;
         }
 
-        Edge e = g.getEdges().get(i);
+        Edge e = g.getAllEdges().get(i);
 
         for(int val = 1; val < k; val++){
             balance[e.getFrom()] -= val;
@@ -44,11 +44,6 @@ public class AFlowCheck {
 
             balance[e.getFrom()] += val;
             balance[e.getTo()] -= val;
-
-            //tu mozeme priradit opacnu orientaciu hrany,
-            // cize e.getto -=, e.getfrom +=, backtrack, e.getto +=, e.getfrom-=
-            // tym padom pri grupe s mnozinou co obsahuje zaporne hodnoty nemusime skusat zaporne,
-            // lebo zmena orientacie funguje ako inverzny prvok
 
         }
         return false;
