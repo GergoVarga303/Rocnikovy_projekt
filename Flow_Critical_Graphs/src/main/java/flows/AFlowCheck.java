@@ -26,9 +26,11 @@ public class AFlowCheck {
             remainingDegree[v] = g.getEdgesFrom(v).size();
         }
 
-        //hrany zoradime podla stupna koncovych vrcholov,
+        //hrany su zoradene podla stupna koncovych vrcholov,
+        //takze najprv spracuje najzlozitejsie vetvy a ukonci ich hned, ak su nevhodne
+        //(po testovani som zistil, ze reversed bol rychlejsi)
         edges.sort(Comparator.comparingInt(
-                e -> g.getEdgesFrom(e.getFrom()).size() + g.getEdgesFrom(e.getTo()).size()
+                e -> Math.min( g.getEdgesFrom(e.getFrom()).size(), g.getEdgesFrom(e.getTo()).size())
         ));
         edges = edges.reversed();
 
@@ -52,18 +54,19 @@ public class AFlowCheck {
         int v = e.getFrom();
         int u = e.getTo();
 
-        remainingDegree[u]--;
+        remainingDegree[u]--;   //vybrali sme hranu, s ktorou budeme pracovat
         remainingDegree[v]--;
 
         int forcedValue = -1;
 
-        if (remainingDegree[v] == 0) {
-            forcedValue = Math.floorMod(balance[v], k);
+        if (remainingDegree[v] == 0) {  //ak tato hrana bola posledna nespracovana
+            forcedValue = Math.floorMod(balance[v], k);     //tak priradime hodnotu balance, aby sa to vyrovnalo na 0
         }
 
         if (remainingDegree[u] == 0) {
             int needed = Math.floorMod(-balance[u], k);
 
+            //ak hrana bola posledna pre obidve hrany, a maju iny balance, tak sa to uz neda vyrovnat
             if (forcedValue != -1 && needed != forcedValue) {
                 remainingDegree[u]++;
                 remainingDegree[v]++;
@@ -72,13 +75,13 @@ public class AFlowCheck {
             forcedValue = needed;
         }
 
-        if (forcedValue != -1){
+        if (forcedValue != -1){     //ak niektora hrana mala poslednu hranu
             if (forcedValue > 0 && forcedValue < k){
                 if (applyAndContinue(i, e, forcedValue)) return true;
             }
         }
         else {
-            for (int val = 1; val < k; val++) {
+            for (int val = 1; val < k; val++) {     //inak klasicky backtrack pre vsetky hodnoty z grupy
                 if (applyAndContinue(i, e, val)) return true;
             }
         }
@@ -88,6 +91,7 @@ public class AFlowCheck {
         return false;
     }
 
+    //vypocitame balance, ideme dalej v backtrack
     private boolean applyAndContinue(int i, Edge e, int val) {
         balance[e.getFrom()] -= val;
         balance[e.getTo()] += val;
