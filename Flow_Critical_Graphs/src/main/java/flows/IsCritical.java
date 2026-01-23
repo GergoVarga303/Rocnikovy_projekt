@@ -13,7 +13,7 @@ public class IsCritical {
             for(int v = u+1; v < g.getVertexCount(); v++){
                 Graph g2 = IdentifyVertices.identifyVertices(g,u,v);
                 if (!(new AFlowCheck(g2,k).hasNonZeroFlow())){
-                    return false;
+                    return false; //"po identifikovani lubovolnych dvoch vrcholov graf nikde nulovy A-tok mat bude"
                 }
             }
         }
