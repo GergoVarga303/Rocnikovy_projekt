@@ -13,17 +13,24 @@ public class AFlowCheck {
 
     private List<Edge> edges;
     private int[] balance;
+    private int[] remainingDegree;
 
     public AFlowCheck(Graph g, int k) {
         this.g = g;
         this.k = k;
         this.edges = g.getEdges();
         this.balance = new int[g.getVertexCount()];
+        this.remainingDegree = new int[g.getVertexCount()];
 
-        //hrany su zoradene podla stupna koncovych vrcholov vzostupne(preto reversed), takze earlyModulo ukonci
-        //nevhodne vetvy skorej
+        for (int v = 0; v < g.getVertexCount(); v++){
+            remainingDegree[v] = g.getEdgesFrom(v).size();
+        }
+
+        //hrany su zoradene podla stupna koncovych vrcholov,
+        //takze najprv spracuje najzlozitejsie vetvy a ukonci ich hned, ak su nevhodne
+        //(po testovani som zistil, ze reversed bol rychlejsi)
         edges.sort(Comparator.comparingInt(
-                e -> g.getEdgesFrom(e.getFrom()).size() + g.getEdgesFrom(e.getTo()).size()
+                e -> Math.min( g.getEdgesFrom(e.getFrom()).size(), g.getEdgesFrom(e.getTo()).size())
         ));
         edges = edges.reversed();
 
@@ -44,40 +51,55 @@ public class AFlowCheck {
         }
 
         Edge e = edges.get(i);
+        int v = e.getFrom();
+        int u = e.getTo();
 
-        for (int val = 1; val < k; val++) {
+        remainingDegree[u]--;   //vybrali sme hranu, s ktorou budeme pracovat
+        remainingDegree[v]--;
 
-            balance[e.getFrom()] -= val;
-            balance[e.getTo()] += val;
+        int forcedValue = -1;
 
-            if (earlyModulo(i + 1)) {
-                if (backtrack(i + 1)) {
-                    return true;
-                }
-            }
-
-            balance[e.getFrom()] += val;
-            balance[e.getTo()] -= val;
+        if (remainingDegree[v] == 0) {  //ak tato hrana bola posledna nespracovana
+            forcedValue = Math.floorMod(balance[v], k);     //tak priradime hodnotu balance, aby sa to vyrovnalo na 0
         }
+
+        if (remainingDegree[u] == 0) {
+            int needed = Math.floorMod(-balance[u], k);
+
+            //ak hrana bola posledna pre obidve hrany, a maju iny balance, tak sa to uz neda vyrovnat
+            if (forcedValue != -1 && needed != forcedValue) {
+                remainingDegree[u]++;
+                remainingDegree[v]++;
+                return false;
+            }
+            forcedValue = needed;
+        }
+
+        if (forcedValue != -1){     //ak niektora hrana mala poslednu hranu
+            if (forcedValue > 0 && forcedValue < k){
+                if (applyAndContinue(i, e, forcedValue)) return true;
+            }
+        }
+        else {
+            for (int val = 1; val < k; val++) {     //inak klasicky backtrack pre vsetky hodnoty z grupy
+                if (applyAndContinue(i, e, val)) return true;
+            }
+        }
+
+        remainingDegree[u]++;
+        remainingDegree[v]++;
         return false;
     }
 
-    private boolean earlyModulo(int i) {
-        for (int v = 0; v < g.getVertexCount(); v++) {  //pre kazdy vrchol
-            boolean hasEdge = false;
+    //vypocitame balance, ideme dalej v backtrack
+    private boolean applyAndContinue(int i, Edge e, int val) {
+        balance[e.getFrom()] -= val;
+        balance[e.getTo()] += val;
 
-            for (int j = i; j < edges.size(); j++) {    //pre kazdu zatial vynechanu hranu
-                Edge e = edges.get(j);
-                if (g.getEdgesFrom(v).contains(e)){     //este existuje hrana ktora moze zmenit balance pre v
-                    hasEdge = true;
-                    break;
-                }
-            }
+        if (backtrack(i + 1)) return true;
 
-            if (!hasEdge && Math.floorMod(balance[v], k) != 0)  //ak uz neexistuje hrana kt moze zmenit balance a zaroven balance nie je 0,
-                return false;                                        //tak ukoncime vetvu, neide do backtrack
-        }
-        return true;
+        balance[e.getFrom()] += val;
+        balance[e.getTo()] -= val;
+        return false;
     }
-
 }
