@@ -2,8 +2,6 @@ package sat;
 
 import graphs.Edge;
 import graphs.Graph;
-
-import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -15,11 +13,15 @@ public class SatEncoder {
     private CNFFormula cnf;
     private Map<Edge, Integer> edgeIndex;
 
+    // Tieto mapovania budeme potrebovať v IsCritical
+    private int[] vertexForceZeroVars; // Premenné B_x
+    private int[][] pairMergerVars;     // Premenné M_uv
+
+
     public SatEncoder(Graph g, int k) {
         this.g = g;
         this.k = k;
-
-        cnf = new CNFFormula();
+        this.cnf = new CNFFormula();
 
         edgeIndex = new HashMap<>();
         for (int i = 0; i < g.getEdges().size(); i++) {
@@ -29,82 +31,49 @@ public class SatEncoder {
         int edgeCount = g.getEdges().size();
         vars = new int[edgeCount][k];
 
-        // 1. Premenné pre hrany: vars[e][val] znamená, že hrana e má hodnotu val (1 až k-1)
         for (int e = 0; e < edgeCount; e++) {
             for (int i = 1; i < k; i++) {
                 vars[e][i] = cnf.newVariable();
             }
         }
 
-        // Podmienky: Každá hrana musí mať priradenú práve jednu nenulovú hodnotu z grupy
         for (int e = 0; e < edgeCount; e++) {
-            // Aspoň jedna hodnota z 1..k-1 (nikde nulový tok)
-            int[] atLeastOne = new int[k - 1];
-            for (int val = 1; val < k; val++) {
-                atLeastOne[val - 1] = vars[e][val];
-            }
-            cnf.addClause(atLeastOne);
-
-            // Najviac jedna hodnota
-            for (int a = 1; a < k; a++) {
-                for (int b = a + 1; b < k; b++) {
-                    cnf.addClause(-vars[e][a], -vars[e][b]);
-                }
-            }
+            int[] edgeVars = new int[k - 1];
+            for (int i = 1; i < k; i++) edgeVars[i - 1] = vars[e][i];
+            exactlyOne(edgeVars);
         }
 
-        // 2. Spustenie optimalizovaného kódovania Kirchhoffovho zákona
-        encodeBalanceConstraintsLinear();
-    }
+        // Uložíme si koncové balance premenné pre každý vrchol
+        int vertexCount = g.getVertexCount();
+        int[][] vertexBalanceVars = new int[vertexCount][k];
+        vertexForceZeroVars = new int[vertexCount];
+        pairMergerVars = new int[vertexCount][vertexCount];
 
-    /**
-     * Getter pre získanie vygenerovanej formuly (rieši tvoju otázku getCNF)
-     */
-    public CNFFormula getCNF() {
-        return cnf;
-    }
-
-    public void writeDimacs(String filename) throws IOException {
-        cnf.writeDimacs(filename);
-    }
-
-    /**
-     * Lineárne zakódovanie toku vo vrcholoch pomocou sekvenčného sumátora.
-     * Zložitosť klesá z (k-1)^Δ na polynomiálnu Δ * k^2.
-     */
-    private void encodeBalanceConstraintsLinear() {
-        for (int v = 0; v < g.getVertexCount(); v++) {
+        // --- Generovanie balance podmienok (Kirchhoff) ---
+        for (int v = 0; v < vertexCount; v++) {
             List<Edge> incidentEdges = g.getEdgesFrom(v);
-            if (incidentEdges.isEmpty()) continue;
-
             int degree = incidentEdges.size();
 
-            // sumVars[i][val] hovorí, že po spracovaní i-tej incidentnej hrany je priebežný súčet v Z_k rovný 'val' (0 až k-1)
+            if (degree == 0) continue;
+
             int[][] sumVars = new int[degree][k];
             for (int i = 0; i < degree; i++) {
-                for (int val = 0; val < k; val++) {
-                    sumVars[i][val] = cnf.newVariable();
+                for (int sum = 0; sum < k; sum++) {
+                    sumVars[i][sum] = cnf.newVariable();
                 }
-                // Priebežný súčet musí v každom kroku nadobúdať práve jednu hodnotu z 0..k-1
                 exactlyOne(sumVars[i]);
             }
 
-            // --- BÁZA: Inicializácia pre prvú hranu ---
+            // Inicializácia pre prvú hranu
             Edge firstEdge = incidentEdges.get(0);
-            int firstEdgeIdx = edgeIndex.get(firstEdge);
-            boolean isFirstInflow = (firstEdge.getTo() == v);
-
-            for (int val = 1; val < k; val++) {
-                // Ak hrana z vrcholu vychádza, jej príspevok odčítame (zmena znamienka v Z_k)
-                int effectiveVal = isFirstInflow ? val : Math.floorMod(-val, k);
-
-                // Ak má prvá hrana hodnotu 'val', prvý priebežný súčet musí byť 'effectiveVal'
-                // Implikácia: vars[firstEdgeIdx][val] => sumVars[0][effectiveVal]
-                // V CNF: ¬vars[firstEdgeIdx][val] ∨ sumVars[0][effectiveVal]
-                cnf.addClause(-vars[firstEdgeIdx][val], sumVars[0][effectiveVal]);
+            int firstEIdx = edgeIndex.get(firstEdge);
+            boolean firstIsInflow = (firstEdge.getTo() == v);
+            for (int edgeVal = 1; edgeVal < k; edgeVal++) {
+                int contribution = firstIsInflow ? edgeVal : Math.floorMod(-edgeVal, k);
+                cnf.addClause(-vars[firstEIdx][edgeVal], sumVars[0][contribution % k]);
             }
 
-            // --- KROK: Sekvenčné prichytávanie ďalších hrán ---
+            // Sekvenčný sčítač pre ostatné hrany
             for (int i = 1; i < degree; i++) {
                 Edge e = incidentEdges.get(i);
                 int eIdx = edgeIndex.get(e);
@@ -114,32 +83,49 @@ public class SatEncoder {
                     for (int edgeVal = 1; edgeVal < k; edgeVal++) {
                         int contribution = isInflow ? edgeVal : Math.floorMod(-edgeVal, k);
                         int newSum = (prevSum + contribution) % k;
-
-                        // Implikácia: (predošlý súčet bol prevSum AND hrana má hodnotu edgeVal) => nový súčet je newSum
-                        // V CNF: ¬sumVars[i-1][prevSum] ∨ ¬vars[eIdx][edgeVal] ∨ sumVars[i][newSum]
-                        cnf.addClause(-sumVars[i-1][prevSum], -vars[eIdx][edgeVal], sumVars[i][newSum]);
+                        cnf.addClause(-sumVars[i - 1][prevSum], -vars[eIdx][edgeVal], sumVars[i][newSum]);
                     }
                 }
             }
 
-            // --- ZÁVER: Výsledný Kirchhoffov zákon ---
-            // Po sčítaní všetkých incidentných hrán musí byť finálna suma na pozícii (degree - 1) rovná 0 mod k
-            cnf.addClause(sumVars[degree - 1][0]);
+            // Zafixujeme, ktoré premenné držia finálny balance vrcholu v
+            for (int val = 0; val < k; val++) {
+                vertexBalanceVars[v][val] = sumVars[degree - 1][val];
+            }
+
+            // VYLEPŠENIE: Namiesto cnf.addClause(sumVars[degree-1][0]) to naviažeme na aktivačnú premennú B_v
+            vertexForceZeroVars[v] = cnf.newVariable();
+            // Implikácia: B_v => (Finálny Balance == 0)  -->  CNF: ¬B_v ∨ vertexBalanceVars[v][0]
+            cnf.addClause(-vertexForceZeroVars[v], vertexBalanceVars[v][0]);
+        }
+
+        // --- Pridanie premenných pre zlúčenie dvojíc (M_uv) ---
+        for (int u = 0; u < vertexCount - 1; u++) {
+            for (int v = u + 1; v < vertexCount; v++) {
+                int mergerVar = cnf.newVariable(); // M_uv
+                pairMergerVars[u][v] = mergerVar;
+
+                // Ak sú u a v zlúčené (M_uv je TRUE), potom Balance_v musieť byť rovný -Balance_u mod k
+                for (int val = 0; val < k; val++) {
+                    int targetVal = Math.floorMod(-val, k);
+                    // Implikácia: M_uv => (Balance_u[val] => Balance_v[targetVal])
+                    // CNF: ¬M_uv ∨ ¬Balance_u[val] ∨ Balance_v[targetVal]
+                    cnf.addClause(-mergerVar, -vertexBalanceVars[u][val], vertexBalanceVars[v][targetVal]);
+                }
+            }
         }
     }
 
-    /**
-     * Pomocná metóda, ktorá vynúti, aby z poľa premenných platila práve jedna (Exactly One)
-     */
     private void exactlyOne(int[] varsSubset) {
-        // Aspoň jedna premenná musí byť pravdivá
         cnf.addClause(varsSubset);
-
-        // Najviac jedna premenná môže byť pravdivá
         for (int i = 0; i < varsSubset.length; i++) {
             for (int j = i + 1; j < varsSubset.length; j++) {
                 cnf.addClause(-varsSubset[i], -varsSubset[j]);
             }
         }
     }
+
+    public CNFFormula getCNF() { return cnf; }
+    public int[] getVertexForceZeroVars() { return vertexForceZeroVars; }
+    public int[][] getPairMergerVars() { return pairMergerVars; }
 }
