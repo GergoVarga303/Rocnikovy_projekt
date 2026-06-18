@@ -12,11 +12,7 @@ public class SatEncoder {
     private int[][] vars;
     private CNFFormula cnf;
     private Map<Edge, Integer> edgeIndex;
-
-    // Tieto mapovania budeme potrebovať v IsCritical
-    private int[] vertexForceZeroVars; // Premenné B_x
-    private int[][] pairMergerVars;     // Premenné M_uv
-
+    private int[] vertexForceZeroVars; // Iba premenné B_v
 
     public SatEncoder(Graph g, int k) {
         this.g = g;
@@ -43,28 +39,21 @@ public class SatEncoder {
             exactlyOne(edgeVars);
         }
 
-        // Uložíme si koncové balance premenné pre každý vrchol
         int vertexCount = g.getVertexCount();
-        int[][] vertexBalanceVars = new int[vertexCount][k];
         vertexForceZeroVars = new int[vertexCount];
-        pairMergerVars = new int[vertexCount][vertexCount];
 
-        // --- Generovanie balance podmienok (Kirchhoff) ---
         for (int v = 0; v < vertexCount; v++) {
             List<Edge> incidentEdges = g.getEdgesFrom(v);
             int degree = incidentEdges.size();
-
             if (degree == 0) continue;
 
+            // Tu zostáva tvoj Sequential Adder (sčítač končiaci v sumVars[degree-1])
             int[][] sumVars = new int[degree][k];
             for (int i = 0; i < degree; i++) {
-                for (int sum = 0; sum < k; sum++) {
-                    sumVars[i][sum] = cnf.newVariable();
-                }
+                for (int sum = 0; sum < k; sum++) sumVars[i][sum] = cnf.newVariable();
                 exactlyOne(sumVars[i]);
             }
 
-            // Inicializácia pre prvú hranu
             Edge firstEdge = incidentEdges.get(0);
             int firstEIdx = edgeIndex.get(firstEdge);
             boolean firstIsInflow = (firstEdge.getTo() == v);
@@ -73,7 +62,6 @@ public class SatEncoder {
                 cnf.addClause(-vars[firstEIdx][edgeVal], sumVars[0][contribution % k]);
             }
 
-            // Sekvenčný sčítač pre ostatné hrany
             for (int i = 1; i < degree; i++) {
                 Edge e = incidentEdges.get(i);
                 int eIdx = edgeIndex.get(e);
@@ -88,32 +76,11 @@ public class SatEncoder {
                 }
             }
 
-            // Zafixujeme, ktoré premenné držia finálny balance vrcholu v
-            for (int val = 0; val < k; val++) {
-                vertexBalanceVars[v][val] = sumVars[degree - 1][val];
-            }
-
-            // VYLEPŠENIE: Namiesto cnf.addClause(sumVars[degree-1][0]) to naviažeme na aktivačnú premennú B_v
+            // Riadiaca premenná B_v: ak je TRUE, vynúti sa nulový balance na vrchole v
             vertexForceZeroVars[v] = cnf.newVariable();
-            // Implikácia: B_v => (Finálny Balance == 0)  -->  CNF: ¬B_v ∨ vertexBalanceVars[v][0]
-            cnf.addClause(-vertexForceZeroVars[v], vertexBalanceVars[v][0]);
+            cnf.addClause(-vertexForceZeroVars[v], sumVars[degree - 1][0]);
         }
-
-        // --- Pridanie premenných pre zlúčenie dvojíc (M_uv) ---
-        for (int u = 0; u < vertexCount - 1; u++) {
-            for (int v = u + 1; v < vertexCount; v++) {
-                int mergerVar = cnf.newVariable(); // M_uv
-                pairMergerVars[u][v] = mergerVar;
-
-                // Ak sú u a v zlúčené (M_uv je TRUE), potom Balance_v musieť byť rovný -Balance_u mod k
-                for (int val = 0; val < k; val++) {
-                    int targetVal = Math.floorMod(-val, k);
-                    // Implikácia: M_uv => (Balance_u[val] => Balance_v[targetVal])
-                    // CNF: ¬M_uv ∨ ¬Balance_u[val] ∨ Balance_v[targetVal]
-                    cnf.addClause(-mergerVar, -vertexBalanceVars[u][val], vertexBalanceVars[v][targetVal]);
-                }
-            }
-        }
+        // Všetky klauzuly pre páry (M_uv) sú kompletne zmazané!
     }
 
     private void exactlyOne(int[] varsSubset) {
@@ -127,5 +94,4 @@ public class SatEncoder {
 
     public CNFFormula getCNF() { return cnf; }
     public int[] getVertexForceZeroVars() { return vertexForceZeroVars; }
-    public int[][] getPairMergerVars() { return pairMergerVars; }
 }

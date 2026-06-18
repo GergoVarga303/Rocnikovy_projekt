@@ -5,91 +5,74 @@ import org.sat4j.core.VecInt;
 import org.sat4j.minisat.SolverFactory;
 import org.sat4j.specs.ContradictionException;
 import org.sat4j.specs.ISolver;
-import org.sat4j.specs.TimeoutException;
 import sat.SatEncoder;
+import java.util.stream.IntStream;
 
 public class IsCritical {
     public static boolean is_A_flow_critical(Graph g, int k) {
         int n = g.getVertexCount();
 
-        // 1. Zakódujeme základný graf (všetky možnosti zlúčenia sú už vo formule pripravené)
+        // Formulu vygenerujeme iba RAZ na začiatku
         SatEncoder encoder = new SatEncoder(g, k);
         var cnf = encoder.getCNF();
-
         int[] bVars = encoder.getVertexForceZeroVars();
-        int[][] mVars = encoder.getPairMergerVars();
 
-        // 2. Inicializácia Sat4j solvera v pamäti
-        ISolver solver = SolverFactory.newDefault();
-        solver.newVar(cnf.getVariableCount());
-        solver.setExpectedNumberOfClauses(cnf.getClauseCount());
-
+        // --- TEST 1: Má pôvodný graf nenulový tok? (Sekvenčne na začiatku) ---
+        ISolver baseSolver = SolverFactory.newDefault();
+        baseSolver.newVar(cnf.getVariableCount());
+        baseSolver.setExpectedNumberOfClauses(cnf.getClauseCount());
         try {
             for (int[] clause : cnf.getClauses()) {
-                solver.addClause(new VecInt(clause));
+                baseSolver.addClause(new VecInt(clause));
             }
+            int[] baseAssumptions = new int[n];
+            for (int v = 0; v < n; v++) baseAssumptions[v] = bVars[v];
 
-            // --- TEST 1: Má pôvodný graf nenulový tok? ---
-            // Predpoklad: Všetky vrcholy sú vynútené na 0 (bVars sú TRUE) a žiadne zlúčenia nebežia (mVars sú FALSE)
-            int[] baseAssumptions = new int[n + (n * (n - 1)) / 2];
-            int idx = 0;
-            for (int v = 0; v < n; v++) {
-                baseAssumptions[idx++] = bVars[v]; // B_v = true
+            if (baseSolver.isSatisfiable(new VecInt(baseAssumptions))) {
+                return false; // Graf už má tok, nie je kritický
             }
-            for (int u = 0; u < n - 1; u++) {
-                for (int v = u + 1; v < n; v++) {
-                    baseAssumptions[idx++] = -mVars[u][v]; // M_uv = false
-                }
-            }
-
-            if (solver.isSatisfiable(new VecInt(baseAssumptions))) {
-                return false; // Graf už má nenulový tok, nemôže byť kritický
-            }
-
-            // --- TEST 2: Inkrementálny cyklus pre všetky dvojice (u, v) ---
-            for (int u = 0; u < n - 1; u++) {
-                for (int v = u + 1; v < n; v++) {
-
-                    // Skladáme predpoklady (assumptions) špecificky pre dvojicu [u, v]
-                    int[] assumptions = new int[n + (n * (n - 1)) / 2];
-                    int aIdx = 0;
-
-                    // Všetky vrcholy okrem u a v musia mať balance 0
-                    for (int x = 0; x < n; x++) {
-                        if (x == u || x == v) {
-                            assumptions[aIdx++] = -bVars[x]; // Uvoľníme Kirchhoffov zákon pre u a v
-                        } else {
-                            assumptions[aIdx++] = bVars[x];  // Ostatné vrcholy musia byť pevne 0
-                        }
-                    }
-
-                    // Aktivujeme zlúčenie iba pre M_uv, ostatné vypneme
-                    for (int x = 0; x < n - 1; x++) {
-                        for (int y = x + 1; y < n; y++) {
-                            if (x == u && y == v) {
-                                assumptions[aIdx++] = mVars[x][y];  // M_uv = true (vynúti balance prepojenie)
-                            } else {
-                                assumptions[aIdx++] = -mVars[x][y]; // Ostatné zlúčenia = false
-                            }
-                        }
-                    }
-
-                    // Spustíme solver nad tými istými dátami, ale s novými predpokladmi
-                    // Sat4j vďaka tomu kompletne zrecykluje všetko, čo sa doteraz naučil
-                    if (!solver.isSatisfiable(new VecInt(assumptions))) {
-                        return false; // Po identifikácii u a v graf nemá tok -> nie je kritický
-                    }
-                }
-            }
-
-        } catch (ContradictionException e) {
-            // Ak nastane kontradikcia už pri plnení bázy, formula je triviálne UNSAT (graf nemá základný tok)
-            // Čo je pre kritickosť v poriadku, musíme ale pokračovať na test dvojíc.
+        } catch (Exception e) {
             return false;
-        } catch (TimeoutException e) {
-            throw new RuntimeException("SAT Solver timeouted", e);
         }
 
-        return true; // Všetky dvojice po zlúčení mali SAT riešenie
+        // --- TEST 2: Paralelný inkrementálny cyklus pre všetky dvojice ---
+        // IntStream.parallel() automaticky využije ForkJoinPool a zapojí všetky dostupné jadrá CPU.
+        // allMatch funguje ako skratka (short-circuit) - ak jedno vlákno vráti false, celý stream ihneď končí.
+        return IntStream.range(0, n - 1).parallel().allMatch(u -> {
+            // Každé vlákno (každé 'u') dostane svoj vlastný nezávislý solver
+            ISolver threadSolver = SolverFactory.newDefault();
+            threadSolver.newVar(cnf.getVariableCount());
+            threadSolver.setExpectedNumberOfClauses(cnf.getClauseCount());
+
+            try {
+                // Naplnenie solvera formulou pre toto vlákno
+                for (int[] clause : cnf.getClauses()) {
+                    threadSolver.addClause(new VecInt(clause));
+                }
+
+                // Lokálne pole assumptions pre toto vlákno
+                int[] assumptions = new int[n];
+                for (int x = 0; x < n; x++) {
+                    assumptions[x] = bVars[x];
+                }
+
+                // Uvoľníme vrchol 'u' permanentne pre toto vlákno
+                assumptions[u] = -bVars[u];
+
+                // Prechádzame všetky prislúchajúce vrcholy 'v'
+                for (int v = u + 1; v < n; v++) {
+                    assumptions[v] = -bVars[v]; // Uvoľníme 'v'
+
+                    if (!threadSolver.isSatisfiable(new VecInt(assumptions))) {
+                        return false; // Našli sme protipríklad, toto vlákno vracia false
+                    }
+
+                    assumptions[v] = bVars[v]; // Vrátime 'v' späť do zafixovaného stavu
+                }
+            } catch (Exception e) {
+                return false;
+            }
+            return true; // Všetky dvojice pre toto 'u' sú v poriadku
+        });
     }
 }
