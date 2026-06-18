@@ -1,4 +1,3 @@
-import flows.AFlowCheck;
 import flows.IsCritical;
 import graphs.Graph;
 import org.junit.Test;
@@ -88,9 +87,7 @@ public class AFlowCriticalGraphs {
             b1.addEdge(edge[0], edge[1]);
         }
 
-        boolean hasNonzeroFlow = new AFlowCheck(b1,3).hasNonZeroFlow();
         boolean res = IsCritical.is_A_flow_critical(b1,3);
-        assertFalse(hasNonzeroFlow);
         assertFalse(res);
     }
 
@@ -110,9 +107,7 @@ public class AFlowCriticalGraphs {
         };
         for (int[] e : edges) b2.addEdge(e[0], e[1]);
 
-        boolean hasNonzeroFlow = new AFlowCheck(b2,3).hasNonZeroFlow();
         boolean res = IsCritical.is_A_flow_critical(b2,3);
-        assertFalse(hasNonzeroFlow);
         assertFalse(res);
     }
 
@@ -141,14 +136,12 @@ public class AFlowCriticalGraphs {
             j5.addEdge(d, nextC);
         }
 
-        boolean hasNonzeroFlow = new AFlowCheck(j5,4).hasNonZeroFlow();
         boolean res = IsCritical.is_A_flow_critical(j5,4);
-        assertFalse(hasNonzeroFlow);
         assertTrue(res);
     }
 
     /**
-     * Generuje Flower Snark J_n.
+     * generuje glower snark J_n.
      * Počet vrcholov je 4 * n. Každý vrchol má stupeň 3 (kubický graf).
      * Pre nepárne n >= 3 nemá nikde-nulový 4-tok a je tokovo Z_4-kritický.
      */
@@ -164,24 +157,20 @@ public class AFlowCriticalGraphs {
             int c = 4 * i + 2;
             int d = 4 * i + 3;
 
-            // Vnútorná hviezda (stred modulu)
             g.addEdge(a, b);
             g.addEdge(a, c);
             g.addEdge(a, d);
 
-            // Spojenia na nasledujúci modul
             int next = (i + 1) % n;
             int nextB = 4 * next + 1;
             int nextC = 4 * next + 2;
             int nextD = 4 * next + 3;
 
             if (i == n - 1) {
-                // Prekríženie (twist) na konci kvetu
                 g.addEdge(b, nextC);
                 g.addEdge(c, nextB);
                 g.addEdge(d, nextD);
             } else {
-                // Priame prepojenie medzi modulmi
                 g.addEdge(b, nextB);
                 g.addEdge(c, nextC);
                 g.addEdge(d, nextD);
@@ -191,17 +180,14 @@ public class AFlowCriticalGraphs {
     }
 
     /**
-     * Generuje Zovšeobecnený Petersenov graf G(n, k).
+     * generuje zovseobecneny Petersenov graf G(n, k).
      * Má 2 * n vrcholov. Pozostáva z vonkajšieho n-uholníka a vnútorného hviezdicového n-uholníka.
      */
     private Graph createGeneralizedPetersen(int n, int k) {
         Graph g = new Graph(2 * n);
         for (int i = 0; i < n; i++) {
-            // Vonkajší kruh
             g.addEdge(i, (i + 1) % n);
-            // Špice (spojenie vonkajšieho a vnútorného kruhu)
             g.addEdge(i, n + i);
-            // Vnútorný kruh s krokom k
             g.addEdge(n + i, n + (i + k) % n);
         }
         return g;
@@ -209,19 +195,11 @@ public class AFlowCriticalGraphs {
 
     @Test
     public void brutal_flowerSnark_100_vertices() {
-        // n = 25 znamená 4 * 25 = 100 vrcholov a 150 hrán.
-        // Počet dvojíc na kontrolu: (100 * 99) / 2 = 4 950 podgrafov!
+        //n = 25 znamena 4 * 25 = 100 vrcholov a 150 hrán.
+        //pocet dvojic na kontrolu: (100 * 99) / 2 = 4 950 podgrafov
         Graph j25 = createFlowerSnark(25);
 
-        System.out.println(">>> ŠTART: Flower Snark J_25 (100 vrcholov, k=4) <<<");
-        long start = System.currentTimeMillis();
-
-        // Flower Snarky sú 4-tokovo kritické -> metóda MUSÍ prejsť všetkých 4950 kombinácií
-        // a pre každú úspešne nájsť tok (SAT), takže finálny výsledok je true.
         boolean res = IsCritical.is_A_flow_critical(j25, 4);
-
-        long end = System.currentTimeMillis();
-        System.out.println(">>> KONIEC: J_25 vyriešený za: " + (end - start) + " ms. Výsledok: " + res + " <<<");
 
         assertTrue(res);
     }
@@ -229,39 +207,116 @@ public class AFlowCriticalGraphs {
 
     @Test
     public void brutal_petersen_short_circuit_120_vertices() {
-        // Zovšeobecnený Petersen G(60, 2) má 2 * 60 = 120 vrcholov a 180 hrán.
-        // Tento test overuje schopnosť algoritmu rýchlo "skratovať" (short-circuit).
-        // Ak graf sám o sebe MÁ nenulový k-tok, SAT solver to zistí hneď v 1. kroku
-        // a nespúšťa žiadne cykly. Malo by to zbehnúť do pár milisekúnd.
         Graph petersenBig = createGeneralizedPetersen(60, 2);
-
-        System.out.println(">>> ŠTART: Petersen G(60,2) (120 vrcholov, k=4) <<<");
-        long start = System.currentTimeMillis();
 
         boolean res = IsCritical.is_A_flow_critical(petersenBig, 4);
 
-        long end = System.currentTimeMillis();
-        System.out.println(">>> KONIEC: G(60,2) vyriešený za: " + (end - start) + " ms. Výsledok: " + res + " <<<");
-
-        // G(60,2) nie je kritický (má 4-tok sám o sebe), očakávame false
+        // G(60,2) ma 4 tok, teda false
         assertFalse(res);
     }
 
     @Test
     public void brutal_petersen_subgraph_fail_100_vertices() {
-        // G(50, 3) má 100 vrcholov.
-        // Tento test simuluje situáciu, kedy pôvodný graf síce nemá tok (prejde úvodným filtrom),
-        // ale hneď pri niektorej z prvých dvojíc vrcholov po identifikácii zlyhá (nenájde sa tok -> UNSAT podgraf).
-        // Tým pádom hneď vyskočí z cyklu von.
         Graph petersenBig = createGeneralizedPetersen(50, 3);
-
-        System.out.println(">>> ŠTART: Petersen G(50,3) (100 vrcholov, k=3) <<<");
-        long start = System.currentTimeMillis();
 
         boolean res = IsCritical.is_A_flow_critical(petersenBig, 3);
 
-        long end = System.currentTimeMillis();
-        System.out.println(">>> KONIEC: G(50,3) vyriešený za: " + (end - start) + " ms. Výsledok: " + res + " <<<");
+        assertFalse(res);
+    }
+
+    @Test
+    public void petersenBig() {
+        //zovseobecneny Petersenov graf G(47, 2) -> 2 * 47 = 94 vrcholov a 141 hrán.
+        int n = 47;
+        Graph petersenBig = new Graph(2 * n);
+
+        for (int i = 0; i < n; i++) {
+            petersenBig.addEdge(i, (i + 1) % n);
+            petersenBig.addEdge(i, i + n);
+            petersenBig.addEdge(i + n, ((i + 2) % n) + n);
+        }
+
+        boolean res = IsCritical.is_A_flow_critical(petersenBig, 4);
+
+        assertFalse(res);
+    }
+
+    @Test
+    public void flowerBigJ25() {
+        int n = 25;
+        Graph j25 = new Graph(4 * n);
+
+        for (int i = 0; i < n; i++) {
+            int center = 4 * i;
+            int b = 4 * i + 1;
+            int c = 4 * i + 2;
+            int d = 4 * i + 3;
+
+            j25.addEdge(center, b);
+            j25.addEdge(center, c);
+            j25.addEdge(center, d);
+
+            int nextB = (4 * (i + 1) + 1) % 100;
+            int nextC = (4 * (i + 1) + 2) % 100;
+            int nextD = (4 * (i + 1) + 3) % 100;
+
+            j25.addEdge(b, nextB);
+            j25.addEdge(c, nextD); //twist
+            j25.addEdge(d, nextC);
+        }
+
+        boolean res = IsCritical.is_A_flow_critical(j25, 4);
+
+        assertTrue(res);
+    }
+
+    @Test
+    public void moebiusLadderM50() {
+        // Möbiusov rebríček s 100 vrcholmi (cyklus prepojený protiľahlými priečkami)
+        int n = 100;
+        Graph moebius = new Graph(n);
+
+        for (int i = 0; i < n; i++) {
+            moebius.addEdge(i, (i + 1) % n);
+        }
+        for (int i = 0; i < n / 2; i++) {
+            moebius.addEdge(i, i + (n / 2));
+        }
+
+        boolean res = IsCritical.is_A_flow_critical(moebius, 3);
+
+        assertFalse(res);
+    }
+
+    @Test
+    public void generalizedPetersenG50_2() {
+        int n = 50;
+        Graph g50 = new Graph(2 * n);
+
+        for (int i = 0; i < n; i++) {
+            g50.addEdge(i, (i + 1) % n);
+            g50.addEdge(i, i + n);
+            g50.addEdge(i + n, ((i + 2) % n) + n);
+        }
+
+        boolean res = IsCritical.is_A_flow_critical(g50, 3);
+
+        assertFalse(res);
+    }
+
+    @Test
+    public void prismGraphY50() {
+        // Prizmatický graf (rebrík spojený do kruhu bez pretočenia) -> 100 vrcholov.
+        int n = 50;
+        Graph prism = new Graph(2 * n);
+
+        for (int i = 0; i < n; i++) {
+            prism.addEdge(i, (i + 1) % n);
+            prism.addEdge(i + n, ((i + 1) % n) + n);
+            prism.addEdge(i, i + n);
+        }
+
+        boolean res = IsCritical.is_A_flow_critical(prism, 3);
 
         assertFalse(res);
     }

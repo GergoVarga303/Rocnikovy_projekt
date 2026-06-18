@@ -12,7 +12,7 @@ public class SatEncoder {
     private int[][] vars;
     private CNFFormula cnf;
     private Map<Edge, Integer> edgeIndex;
-    private int[] vertexForceZeroVars; // Iba premenné B_v
+    private int[] vertexForceZeroVars;
 
     public SatEncoder(Graph g, int k) {
         this.g = g;
@@ -27,6 +27,7 @@ public class SatEncoder {
         int edgeCount = g.getEdges().size();
         vars = new int[edgeCount][k];
 
+        //vytvorenie premennych pre hrany
         for (int e = 0; e < edgeCount; e++) {
             for (int i = 1; i < k; i++) {
                 vars[e][i] = cnf.newVariable();
@@ -42,12 +43,12 @@ public class SatEncoder {
         int vertexCount = g.getVertexCount();
         vertexForceZeroVars = new int[vertexCount];
 
+        //kodovanie zachovania toku vo vrcholoch
         for (int v = 0; v < vertexCount; v++) {
             List<Edge> incidentEdges = g.getEdgesFrom(v);
             int degree = incidentEdges.size();
             if (degree == 0) continue;
 
-            // Tu zostáva tvoj Sequential Adder (sčítač končiaci v sumVars[degree-1])
             int[][] sumVars = new int[degree][k];
             for (int i = 0; i < degree; i++) {
                 for (int sum = 0; sum < k; sum++) sumVars[i][sum] = cnf.newVariable();
@@ -75,14 +76,13 @@ public class SatEncoder {
                     }
                 }
             }
-
-            // Riadiaca premenná B_v: ak je TRUE, vynúti sa nulový balance na vrchole v
+            //vynutenie nuloveho sumarneho toku
             vertexForceZeroVars[v] = cnf.newVariable();
             cnf.addClause(-vertexForceZeroVars[v], sumVars[degree - 1][0]);
         }
-        // Všetky klauzuly pre páry (M_uv) sú kompletne zmazané!
     }
 
+    //pomocna metoda pre klauzuly prave jedna
     private void exactlyOne(int[] varsSubset) {
         cnf.addClause(varsSubset);
         for (int i = 0; i < varsSubset.length; i++) {
